@@ -1,0 +1,7 @@
+{
+  "name": "Remix: My Product Complaint Manager",
+  "description": "A comprehensive system designed to track customers, manage product complaints, document company responses, check return dates, and analyze performance dashboards with dark mode, multi-language support, and role-based access control.",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

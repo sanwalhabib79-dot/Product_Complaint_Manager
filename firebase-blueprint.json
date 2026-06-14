@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role-based access control",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID of the user" },
+        "email": { "type": "string", "description": "Email of the user" },
+        "name": { "type": "string", "description": "Display name" },
+        "role": { "type": "string", "enum": ["Admin", "Agent", "Viewer"], "description": "User role" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name", "role", "createdAt"]
+    },
+    "customer": {
+      "title": "Customer",
+      "description": "Customer demographic details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Auto-generated customer ID" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "userId", "createdAt"]
+    },
+    "complaint": {
+      "title": "Complaint",
+      "description": "A product complaint including product info, company responses, dates, and images",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Auto-generated complaint ID" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Sent to Company", "In Progress", "Completed", "Returned"] },
+        "notes": { "type": "string" },
+        "productName": { "type": "string" },
+        "productCategory": { "type": "string" },
+        "productModel": { "type": "string" },
+        "productSerialNumber": { "type": "string" },
+        "productImage": { "type": "string", "description": "Data URL of uploaded product image or illustration" },
+        "companyName": { "type": "string" },
+        "complaintSentDate": { "type": "string", "description": "ISO date string or empty" },
+        "companyComplaintNumber": { "type": "string" },
+        "companyResponseStatus": { "type": "string" },
+        "companyNotes": { "type": "string" },
+        "productReceiveDate": { "type": "string" },
+        "expectedReturnDate": { "type": "string" },
+        "productReturnDate": { "type": "string" },
+        "deliveryStatus": { "type": "string" },
+        "userId": { "type": "string" },
+        "statusHistory": { "type": "array", "description": "Array of status change logs" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "customerId", "customerName", "customerPhone", "description", "status",
+        "productName", "productCategory", "productModel", "productSerialNumber",
+        "companyName", "userId", "createdAt", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "Stores user access control and profiles"
+    },
+    "/customers/{customerId}": {
+      "schema": "customer",
+      "description": "Collection of customer details"
+    },
+    "/complaints/{complaintId}": {
+      "schema": "complaint",
+      "description": "Collection of product complaints"
+    }
+  }
+}

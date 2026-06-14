@@ -1,0 +1,204 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default Catch-All Deny Net (The Base Gate)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- 2. Hardened Reusable Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Prevents ID Poisoning / Junk character injections
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function getUserRole(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.role;
+    }
+
+    // Role predicates
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "kaleemullahgkaleemullahg7@gmail.com" ||
+        (userExists(request.auth.uid) && getUserRole(request.auth.uid) == 'Admin')
+      );
+    }
+
+    function isAgent() {
+      return isSignedIn() && (
+        isAdmin() ||
+        (userExists(request.auth.uid) && getUserRole(request.auth.uid) == 'Agent')
+      );
+    }
+
+    function isViewer() {
+      return isSignedIn() && (
+        isAgent() ||
+        (userExists(request.auth.uid) && getUserRole(request.auth.uid) == 'Viewer')
+      );
+    }
+
+    // --- 3. Entity Validation Blueprints (Anti-Update-Gap) ---
+
+    // Validates local database profile schema
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'name', 'role', 'createdAt']) &&
+             data.keys().size() == 5 &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.name is string && data.name.size() <= 256 &&
+             data.role is string && (data.role == 'Admin' || data.role == 'Agent' || data.role == 'Viewer') &&
+             data.createdAt is string && data.createdAt.size() <= 30;
+    }
+
+    // Validates customer demographic records shape
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'email', 'userId', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 256 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.createdAt is string && data.createdAt.size() <= 30;
+    }
+
+    // Validates complex complaint registry record shape (including optional and system variables)
+    function isValidComplaint(data) {
+      return data.keys().hasAll([
+               'id', 'customerId', 'customerName', 'customerPhone', 'description', 'status',
+               'productName', 'productCategory', 'productModel', 'productSerialNumber',
+               'companyName', 'userId', 'createdAt', 'updatedAt'
+             ]) &&
+             // Handle explicit/implicit size checking on all optional text and image variables to block wallet drain
+             (!('productImage' in data) || (data.productImage is string && data.productImage.size() <= 150000)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 20000)) &&
+             (!('complaintSentDate' in data) || (data.complaintSentDate is string && data.complaintSentDate.size() <= 30)) &&
+             (!('companyComplaintNumber' in data) || (data.companyComplaintNumber is string && data.companyComplaintNumber.size() <= 128)) &&
+             (!('companyResponseStatus' in data) || (data.companyResponseStatus is string && data.companyResponseStatus.size() <= 256)) &&
+             (!('companyNotes' in data) || (data.companyNotes is string && data.companyNotes.size() <= 20000)) &&
+             (!('productReceiveDate' in data) || (data.productReceiveDate is string && data.productReceiveDate.size() <= 30)) &&
+             (!('expectedReturnDate' in data) || (data.expectedReturnDate is string && data.expectedReturnDate.size() <= 30)) &&
+             (!('productReturnDate' in data) || (data.productReturnDate is string && data.productReturnDate.size() <= 30)) &&
+             (!('deliveryStatus' in data) || (data.deliveryStatus is string && data.deliveryStatus.size() <= 128)) &&
+              (!('statusHistory' in data) || (data.statusHistory is list)) &&
+             
+             data.id is string && data.id.size() <= 128 &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() <= 256 &&
+             data.customerPhone is string && data.customerPhone.size() <= 30 &&
+             data.description is string && data.description.size() <= 20000 &&
+             data.status is string && (data.status == 'Pending' || data.status == 'Sent to Company' || data.status == 'In Progress' || data.status == 'Completed' || data.status == 'Returned') &&
+             data.productName is string && data.productName.size() <= 256 &&
+             data.productCategory is string && data.productCategory.size() <= 256 &&
+             data.productModel is string && data.productModel.size() <= 256 &&
+             data.productSerialNumber is string && data.productSerialNumber.size() <= 256 &&
+             data.companyName is string && data.companyName.size() <= 256 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.createdAt is string && data.createdAt.size() <= 30 &&
+             data.updatedAt is string && data.updatedAt.size() <= 30;
+    }
+
+    // --- 4. Match Rules ---
+
+    // Profiles Rules
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isViewer());
+      allow list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      
+      // Allow regular users to register their own profile initially
+      allow create: if isSignedIn() && request.auth.uid == userId && 
+                    isValidUserProfile(incoming()) && 
+                    incoming().uid == userId;
+
+      // Restrict role modification to Admin only, while regular owners can update name/email
+      allow update: if isSignedIn() && isValidUserProfile(incoming()) && 
+                    incoming().uid == userId && 
+                    incoming().createdAt == existing().createdAt && (
+                      isAdmin() || (request.auth.uid == userId && incoming().role == existing().role)
+                    );
+                    
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // Customers Rules
+    match /customers/{customerId} {
+      // Allow get/list if user is signed in and owns the records, or is Admin/Agent/Viewer in the company
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isViewer());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isViewer());
+
+      // Only certified Admins or Agents can write customer records
+      allow create: if isSignedIn() && 
+                    isValidId(customerId) && 
+                    incoming().id == customerId && 
+                    isValidCustomer(incoming()) && 
+                    incoming().userId == request.auth.uid && (
+                      isAdmin() || isAgent()
+                    );
+
+      // Protect immutability of record identifiers and creation tracking
+      allow update: if isSignedIn() && 
+                    isValidCustomer(incoming()) && 
+                    incoming().id == existing().id && 
+                    incoming().userId == existing().userId && 
+                    incoming().createdAt == existing().createdAt && (
+                      isAdmin() || isAgent()
+                    );
+
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // Complaints Rules
+    match /complaints/{complaintId} {
+      // Ensure only authorized staff and administrators can view complaints details
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isViewer());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isViewer());
+
+      // Prevent orphan records by strictly requiring referenced Customer document to exist (Global Consistency)
+      allow create: if isSignedIn() && 
+                    isValidId(complaintId) && 
+                    incoming().id == complaintId && 
+                    exists(/databases/$(database)/documents/customers/$(incoming().customerId)) &&
+                    isValidComplaint(incoming()) && 
+                    incoming().userId == request.auth.uid && (
+                      isAdmin() || isAgent()
+                    );
+
+      // Terminal State Locking and attribute protection
+      allow update: if isSignedIn() && 
+                    isValidComplaint(incoming()) && 
+                    incoming().id == existing().id && 
+                    incoming().customerId == existing().customerId && 
+                    incoming().userId == existing().userId && 
+                    incoming().createdAt == existing().createdAt && (
+                      isAdmin() || (
+                        isAgent() && 
+                        // Terminal State Lock: Prevent changing ANY fields once status is Completed or Returned unless Admin
+                        !(existing().status in ['Completed', 'Returned'])
+                      )
+                    );
+
+      allow delete: if isSignedIn() && isAdmin();
+    }
+  }
+}
